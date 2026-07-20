@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Deploy all project files to the Pico's filesystem.
+# The Pico will run main.py automatically on every boot after deployment.
+#
+# Usage (from workspace root):
+#   bash OpenCTDKd_multispectral/scripts/deploy.sh [PORT]
+#
+# PORT defaults to COM4; override with: bash scripts/deploy.sh COM5
+
+set -e
+
+PORT=${1:-COM4}
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "Deploying OpenCTDKd_multispectral to Pico on $PORT..."
+
+mpremote connect "$PORT" fs mkdir :lib 2>/dev/null || true
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/ds3231.py" :lib/ds3231.py
+echo "  copied lib/ds3231.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/rtc.py" :lib/rtc.py
+echo "  copied lib/rtc.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/main.py" :main.py
+echo "  copied main.py"
+
+echo ""
+echo "Deploy complete. Pico will now run main.py on every boot."
+echo "To watch boot output: mpremote connect $PORT repl  (then Ctrl-D to soft reset)"

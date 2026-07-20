@@ -1,27 +1,43 @@
+"""OpenCTDKd Multispectral — main entry point.
+
+Deployed modules (lib/):
+    ds3231.py  — DS3231 low-level I2C driver
+    rtc.py     — RTC module (setup / read_time / set_time / read_temperature)
+
+State machine modes (to be expanded as hardware is added):
+    BOOT  — initialise hardware, print status, then transition to IDLE
+    IDLE  — placeholder; will become the logging/standby loop
 """
-MicroPython Hello World - LED Blink
-Blinks the onboard LED to verify the system is working
-"""
-import machine
-import time
 
-# Configure the onboard LED
-# For most boards, LED is on pin 25 (Pico) or 'LED' string
-try:
-    led = machine.Pin('LED', machine.Pin.OUT)
-except:
-    # Fallback for boards where 'LED' doesn't work
-    led = machine.Pin(25, machine.Pin.OUT)
+import sys
+import lib.rtc as rtc
 
-print("Hello World from MicroPython!")
-print("Starting LED blink...")
 
-# Blink the LED
-while True:
-    led.on()
-    print("LED ON")
-    time.sleep(0.5)
-    
-    led.off()
-    print("LED OFF")
-    time.sleep(0.5)
+def _fmt_time(t):
+    return "%04d-%02d-%02d  %02d:%02d:%02d" % t
+
+
+def boot():
+    print("OpenCTDKd booting...")
+
+    # --- RTC ---
+    try:
+        _rtc = rtc.setup()
+        t = rtc.read_time(_rtc)
+        print("RTC:  ", _fmt_time(t))
+        print("Temp: ", rtc.read_temperature(_rtc), "C")
+    except OSError as e:
+        print("RTC error:", e)
+        sys.exit(1)
+
+    return _rtc
+
+
+def idle(rtc_dev):
+    """Placeholder idle loop — will grow into the main logging state machine."""
+    print("System ready. (idle)")
+
+
+# --- Entry point ---
+rtc_dev = boot()
+idle(rtc_dev)
