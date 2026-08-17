@@ -7,6 +7,10 @@ Deployed modules (lib/):
     storage.py — Storage module (setup / append_csv / read_file / exists)
     as7341.py  — AS7341 low-level I2C driver
     spectral.py — Spectral module (setup / read_channels)
+    ms5837.py  — MS5837-30BA low-level I2C driver
+    pressure.py — Pressure module (setup / read)
+    tsys01.py  — TSYS01 low-level I2C driver
+    temperature.py — Temperature module (setup / read)
 
 State machine modes (to be expanded as hardware is added):
     BOOT  — initialise hardware, print status, then transition to IDLE
@@ -17,6 +21,8 @@ import sys
 import lib.rtc as rtc
 import lib.storage as storage
 import lib.spectral as spectral
+import lib.pressure as pressure
+import lib.temperature as temperature
 
 
 def _fmt_time(t):
@@ -50,14 +56,28 @@ def boot():
         print("Spectral error:", e)
         sys.exit(1)
 
-    return _rtc, _spectral
+    # --- Pressure sensor ---
+    try:
+        _pressure = pressure.setup()
+    except OSError as e:
+        print("Pressure error:", e)
+        sys.exit(1)
+
+    # --- Temperature sensor ---
+    try:
+        _temperature = temperature.setup()
+    except OSError as e:
+        print("Temperature error:", e)
+        sys.exit(1)
+
+    return _rtc, _spectral, _pressure, _temperature
 
 
-def idle(rtc_dev, spectral_dev):
+def idle(rtc_dev, spectral_dev, pressure_dev, temp_dev):
     """Placeholder idle loop — will grow into the main logging state machine."""
     print("System ready. (idle)")
 
 
 # --- Entry point ---
-rtc_dev, spectral_dev = boot()
-idle(rtc_dev, spectral_dev)
+rtc_dev, spectral_dev, pressure_dev, temp_dev = boot()
+idle(rtc_dev, spectral_dev, pressure_dev, temp_dev)

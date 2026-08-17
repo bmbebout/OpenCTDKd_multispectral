@@ -35,6 +35,18 @@ echo "  copied lib/as7341.py"
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/spectral.py" :lib/spectral.py
 echo "  copied lib/spectral.py"
 
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/ms5837.py" :lib/ms5837.py
+echo "  copied lib/ms5837.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/pressure.py" :lib/pressure.py
+echo "  copied lib/pressure.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/tsys01.py" :lib/tsys01.py
+echo "  copied lib/tsys01.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/temperature.py" :lib/temperature.py
+echo "  copied lib/temperature.py"
+
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/main.py" :main.py
 echo "  copied main.py"
 
