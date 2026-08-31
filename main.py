@@ -17,9 +17,7 @@ Deployed modules (lib/):
 
 State machine modes:
     BOOT       — initialise hardware, print status
-    WEB_CONFIG — serve WiFi AP dashboard for up to 45 s; transitions to
-                 LOGGING if no client connects within the idle window
-    LOGGING    — data-recording mode (to be implemented)
+    WEB_CONFIG — serve the dashboard and manage the recording session
 """
 
 import sys
@@ -88,10 +86,8 @@ def boot():
 
 
 def idle(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
-    """Run the web config server, then transition to data-recording mode."""
+    """Run the dashboard and recording loop."""
     webserver.run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
-    # TODO: call start_logging() here once the data-recording mode is implemented
-    print("Data recording mode — not yet implemented")
 
 
 # --- Entry point ---

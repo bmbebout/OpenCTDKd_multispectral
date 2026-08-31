@@ -57,6 +57,9 @@ echo "  copied lib/ezo_ec.py"
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/conductivity.py" :lib/conductivity.py
 echo "  copied lib/conductivity.py"
 
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/recording.py" :lib/recording.py
+echo "  copied lib/recording.py"
+
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/webserver.py" :lib/webserver.py
 echo "  copied lib/webserver.py"
 

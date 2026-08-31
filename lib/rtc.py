@@ -37,3 +37,8 @@ def set_time(rtc, year, month, day, hour, minute, second):
 def read_temperature(rtc):
     """Return DS3231 internal temperature in °C."""
     return rtc.temperature()
+
+
+def enable_1hz_sqw(rtc):
+    """Enable the DS3231 1 Hz square-wave output."""
+    rtc.enable_1hz_sqw()

@@ -3,6 +3,7 @@
 _DS3231_ADDR = 0x68
 _REG_TIME = 0x00   # start of 7-byte time block (sec, min, hr, dow, date, mon, yr)
 _REG_TEMP = 0x11   # 2-byte temperature register
+_REG_CONTROL = 0x0E
 
 
 def _bcd_to_int(bcd):
@@ -56,3 +57,10 @@ class DS3231:
         if temp_raw > 511:          # two's complement: sign bit set
             temp_raw -= 1024
         return temp_raw * 0.25
+
+    def enable_1hz_sqw(self):
+        """Configure the SQW pin as a 1 Hz square-wave output."""
+        control = self._i2c.readfrom_mem(self._addr, _REG_CONTROL, 1)[0]
+        control &= ~0x04  # INTCN=0 selects square-wave mode
+        control &= ~0x18  # RS2/RS1=00 selects 1 Hz
+        self._i2c.writeto_mem(self._addr, _REG_CONTROL, bytes([control]))
