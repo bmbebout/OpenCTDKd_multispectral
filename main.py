@@ -11,18 +11,25 @@ Deployed modules (lib/):
     pressure.py — Pressure module (setup / read)
     tsys01.py  — TSYS01 low-level I2C driver
     temperature.py — Temperature module (setup / read)
+    ezo_ec.py  — Atlas Scientific EZO-EC low-level I2C driver
+    conductivity.py — Conductivity module (setup / read)
+    webserver.py — WiFi AP + HTTP config server (status dashboard)
 
-State machine modes (to be expanded as hardware is added):
-    BOOT  — initialise hardware, print status, then transition to IDLE
-    IDLE  — placeholder; will become the logging/standby loop
+State machine modes:
+    BOOT       — initialise hardware, print status
+    WEB_CONFIG — serve WiFi AP dashboard for up to 45 s; transitions to
+                 LOGGING if no client connects within the idle window
+    LOGGING    — data-recording mode (to be implemented)
 """
 
 import sys
-import lib.rtc as rtc
-import lib.storage as storage
-import lib.spectral as spectral
-import lib.pressure as pressure
-import lib.temperature as temperature
+import lib.rtc          as rtc
+import lib.storage      as storage
+import lib.spectral     as spectral
+import lib.pressure     as pressure
+import lib.temperature  as temperature
+import lib.conductivity as conductivity
+import lib.webserver    as webserver
 
 
 def _fmt_time(t):
@@ -70,14 +77,23 @@ def boot():
         print("Temperature error:", e)
         sys.exit(1)
 
-    return _rtc, _spectral, _pressure, _temperature
+    # --- Conductivity sensor ---
+    try:
+        _conductivity = conductivity.setup()
+    except OSError as e:
+        print("Conductivity error:", e)
+        sys.exit(1)
+
+    return _rtc, _spectral, _pressure, _temperature, _conductivity
 
 
-def idle(rtc_dev, spectral_dev, pressure_dev, temp_dev):
-    """Placeholder idle loop — will grow into the main logging state machine."""
-    print("System ready. (idle)")
+def idle(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
+    """Run the web config server, then transition to data-recording mode."""
+    webserver.run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
+    # TODO: call start_logging() here once the data-recording mode is implemented
+    print("Data recording mode — not yet implemented")
 
 
 # --- Entry point ---
-rtc_dev, spectral_dev, pressure_dev, temp_dev = boot()
-idle(rtc_dev, spectral_dev, pressure_dev, temp_dev)
+rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev = boot()
+idle(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
