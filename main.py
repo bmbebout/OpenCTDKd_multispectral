@@ -13,6 +13,9 @@ Deployed modules (lib/):
     temperature.py — Temperature module (setup / read)
     ezo_ec.py  — Atlas Scientific EZO-EC low-level I2C driver
     conductivity.py — Conductivity module (setup / read)
+    neo6m.py    — NEO-6M-compatible NMEA GPS driver
+    gps.py      — GPS module (setup / read / RTC sync)
+    oled.py     — SSD1306 128x32 OLED module
     webserver.py — WiFi AP + HTTP config server (status dashboard)
 
 State machine modes:
@@ -21,12 +24,15 @@ State machine modes:
 """
 
 import sys
+import time
 import lib.rtc          as rtc
 import lib.storage      as storage
 import lib.spectral     as spectral
 import lib.pressure     as pressure
 import lib.temperature  as temperature
 import lib.conductivity as conductivity
+import lib.gps          as gps
+import lib.oled         as oled
 import lib.webserver    as webserver
 
 
@@ -48,11 +54,32 @@ def boot():
         sys.exit(1)
 
     # --- SD card ---
+    sd_ready = False
+    for attempt in range(3):
+        try:
+            storage.setup()
+            sd_ready = True
+            break
+        except OSError as e:
+            print("SD error (attempt %d/3):" % (attempt + 1), e)
+            time.sleep(1)
+    if not sd_ready:
+        print("SD unavailable; web server will start, but recording and file operations are disabled")
+    else:
+        try:
+            storage.append_log("boot", _fmt_time(rtc.read_time(_rtc)).replace("  ", "T"))
+        except OSError as e:
+            print("Log error:", e)
+
+    # --- GPS ---
+    _gps = None
+    rtc_source = "rtc"
     try:
-        storage.setup()
+        _gps = gps.setup()
+        print("GPS:   waiting for first fix; RTC source:", rtc_source)
     except OSError as e:
-        print("SD error:", e)
-        sys.exit(1)
+        print("GPS error:", e)
+        _gps = None
 
     # --- Spectral sensor ---
     try:
@@ -82,14 +109,20 @@ def boot():
         print("Conductivity error:", e)
         sys.exit(1)
 
-    return _rtc, _spectral, _pressure, _temperature, _conductivity
+    try:
+        _oled = oled.setup()
+    except OSError as e:
+        print("OLED error:", e)
+        _oled = None
+
+    return _rtc, _gps, rtc_source, _spectral, _pressure, _temperature, _conductivity, _oled
 
 
-def idle(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
+def idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
     """Run the dashboard and recording loop."""
-    webserver.run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
+    webserver.run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
 
 
 # --- Entry point ---
-rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev = boot()
-idle(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
+rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev = boot()
+idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)

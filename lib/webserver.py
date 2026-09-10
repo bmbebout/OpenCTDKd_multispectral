@@ -20,7 +20,10 @@ import lib.spectral     as _spectral
 import lib.pressure     as _pressure
 import lib.temperature  as _temp
 import lib.conductivity as _cond
+import lib.gps          as _gps
+import lib.oled         as _oled
 import lib.recording as _recording
+import lib.storage as _storage
 
 _SSID     = "OpenCTDKd"
 _PASSWORD = "M$cience"
@@ -40,6 +43,7 @@ _HTML = """\
 body{font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:1em;max-width:480px;margin:auto}
 h1{color:#58a6ff;margin-bottom:.8em;font-size:1.4em}
 h2{color:#8b949e;font-size:.75em;text-transform:uppercase;letter-spacing:.08em;margin:1em 0 .4em}
+.clock-heading{display:flex;justify-content:space-between;align-items:baseline}
 .row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 12px;
      background:#161b22;border:1px solid #30363d;border-radius:4px;margin-bottom:5px}
 .lbl{color:#8b949e;font-size:.9em}
@@ -60,7 +64,7 @@ button:active{background:#2ea043}
 <body>
 <h1>OpenCTDKd</h1>
 
-<h2>Clock</h2>
+<h2 class="clock-heading"><span>Clock</span><span id="refresh">&#8212;</span></h2>
 <div class="row">
   <span class="lbl">RTC Time</span>
   <span class="v" id="t">&#8212;</span>
@@ -68,6 +72,18 @@ button:active{background:#2ea043}
 <div class="row">
     <span class="lbl">SQW Clock Sync</span>
     <span class="v" id="sqw">&#8212;</span>
+</div>
+<div class="row">
+    <span class="lbl">SD Card</span>
+    <span class="v" id="sd">&#8212;</span>
+</div>
+<div class="row">
+    <span class="lbl">GPS</span>
+    <span class="v" id="gps">&#8212;</span>
+</div>
+<div class="row">
+    <span class="lbl">Position</span>
+    <span class="v" id="position">&#8212;</span>
 </div>
 
 <h2>Sensors</h2>
@@ -128,6 +144,12 @@ function poll(){
     .then(function(d){
       document.getElementById('t').textContent   = d.time;
     document.getElementById('sqw').textContent = d.sqw;
+    document.getElementById('sd').textContent  = d.sd;
+            var gps = d.gps || {};
+            document.getElementById('gps').textContent =
+                gps.status + ' (' + gps.satellites + ' sats)';
+            document.getElementById('position').textContent = gps.fix ?
+                numberText(gps.latitude, 6) + ', ' + numberText(gps.longitude, 6) : '--';
             document.getElementById('tc').textContent  = numberText(d.temperature_c, 2);
             document.getElementById('p').textContent   = numberText(d.pressure_mbar, 1);
             document.getElementById('dp').textContent  = numberText(d.depth_m, 3);
@@ -144,7 +166,8 @@ function poll(){
                      + '<span class="cnt">'+s[k]+'</span>';
         g.appendChild(el);
       }
-      document.getElementById('ts').textContent = 'Last update: ' + d.time;
+    document.getElementById('refresh').textContent = 'updated ' + d.time + ' UTC';
+    document.getElementById('ts').textContent = 'Dashboard data refreshed';
     })
     .catch(function(e){
             reportError('status: ' + e.message);
@@ -214,7 +237,7 @@ def _start_ap():
     return ap
 
 
-def _get_status(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
+def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
     """Read all sensors and return a JSON-serialisable dict.
     Individual sensor failures return 0.0 so the page always renders."""
     data = {}
@@ -262,9 +285,28 @@ def _get_status(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
         print("webserver: spectral error:", e)
         data["spectral"] = {}
 
+    _recording.set_display_values(data["spectral"].get("clear"), temp_c)
+
+    if not _recording.active():
+        try:
+            _gps.poll(gps_dev, rtc_dev)
+        except Exception as e:
+            print("webserver: GPS error:", e)
     data["sqw"] = _recording.clock_status()
+    gps_data = _gps.read(gps_dev, poll=False)
+    data["gps"] = {
+        "status": _gps.status(gps_dev),
+        "fix": gps_data["fix"],
+        "latitude": gps_data["latitude"],
+        "longitude": gps_data["longitude"],
+        "satellites": gps_data["satellites"],
+    }
+    data["rtc_source"] = _gps.rtc_source(gps_dev, rtc_source)
+    data["sd"] = "ready" if _storage.available() else "unavailable"
     data["recording"] = _recording.active()
     data["recording_file"] = _recording.path() or ""
+    _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
+                 _recording.line_count(), data["spectral"].get("clear"), temp_c)
 
     return data
 
@@ -283,29 +325,45 @@ def _send(conn, status, content_type, body, download_name=None):
     conn.sendall(header.encode("utf-8") + body)
 
 
-def _handle(conn, path, rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
+def _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
     """Dispatch one HTTP request. Returns True if the server should stop."""
-    if path.startswith("/api/start"):
-        _recording.start(rtc_dev)
-        _send(conn, "200 OK", "application/json", '{"status":"recording"}')
-    elif path.startswith("/api/stop"):
-        _recording.stop()
-        _send(conn, "200 OK", "application/json", '{"status":"stopped"}')
-    elif path.startswith("/api/files"):
-        _send(conn, "200 OK", "application/json", json.dumps(_recording.files()))
-    elif path.startswith("/api/download"):
-        name = _query(path, "name")
-        _send(conn, "200 OK", "text/csv", _recording.read_file(name), name)
-    elif path.startswith("/api/delete"):
-        name = _query(path, "name")
-        _recording.delete_file(name)
-        _send(conn, "200 OK", "application/json", '{"status":"deleted"}')
-    elif path.startswith("/api/status"):
-        data = _get_status(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
-        _send(conn, "200 OK", "application/json", json.dumps(data))
-    else:
-        _send(conn, "200 OK", "text/html; charset=utf-8", _HTML)
+    try:
+        if path.startswith("/api/start"):
+            _require_sd()
+            _recording.start(rtc_dev, gps_dev, rtc_source)
+            _send(conn, "200 OK", "application/json", '{"status":"recording"}')
+        elif path.startswith("/api/stop"):
+            _recording.stop()
+            _send(conn, "200 OK", "application/json", '{"status":"stopped"}')
+        elif path.startswith("/api/files"):
+            _require_sd()
+            _send(conn, "200 OK", "application/json", json.dumps(_recording.files()))
+        elif path.startswith("/api/download"):
+            _require_sd()
+            name = _query(path, "name")
+            _send(conn, "200 OK", "text/csv", _recording.read_file(name), name)
+        elif path.startswith("/api/delete"):
+            _require_sd()
+            name = _query(path, "name")
+            _recording.delete_file(name)
+            _send(conn, "200 OK", "application/json", '{"status":"deleted"}')
+        elif path.startswith("/api/status"):
+            data = _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
+            _send(conn, "200 OK", "application/json", json.dumps(data))
+        else:
+            _send(conn, "200 OK", "text/html; charset=utf-8", _HTML)
+    except OSError as e:
+        _send(conn, "503 Service Unavailable", "application/json",
+              json.dumps({"error": str(e)}))
+    except ValueError as e:
+        _send(conn, "400 Bad Request", "application/json",
+              json.dumps({"error": str(e)}))
     return False
+
+
+def _require_sd():
+    if not _storage.available():
+        raise OSError("SD card unavailable; check card, wiring, and power")
 
 
 def _query(path, key):
@@ -322,7 +380,7 @@ def _query(path, key):
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
+def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
     """Start AP and serve until the user requests /api/shutdown.
 
     Returns False so the caller can transition to data-recording mode.
@@ -345,8 +403,14 @@ def run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
             try:
                 conn, addr = srv.accept()
             except OSError:
-                _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev,
-                                         time.ticks_ms())
+                try:
+                    _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev,
+                                             cond_dev, time.ticks_ms())
+                except OSError as e:
+                    print("webserver: recording error:", e)
+                _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
+                             _recording.line_count(), _recording.clear_value(),
+                             _recording.temperature_value())
                 continue
 
             stop = False
@@ -355,7 +419,7 @@ def run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
                 req = raw.decode("utf-8")
                 parts = req.split(" ")
                 path = parts[1] if len(parts) >= 2 else "/"
-                stop = _handle(conn, path, rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev)
+                stop = _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
             except Exception as e:
                 print("webserver: request error:", e)
             finally:
@@ -364,8 +428,14 @@ def run(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev):
             if stop:
                 break
 
-            _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev,
-                                     time.ticks_ms())
+            try:
+                _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev,
+                                         cond_dev, time.ticks_ms())
+            except OSError as e:
+                print("webserver: recording error:", e)
+            _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
+                         _recording.line_count(), _recording.clear_value(),
+                         _recording.temperature_value())
 
     finally:
         srv.close()

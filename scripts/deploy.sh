@@ -33,6 +33,15 @@ echo "  copied lib/sdcard.py"
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/storage.py" :lib/storage.py
 echo "  copied lib/storage.py"
 
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/neo6m.py" :lib/neo6m.py
+echo "  copied lib/neo6m.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/gps.py" :lib/gps.py
+echo "  copied lib/gps.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/oled.py" :lib/oled.py
+echo "  copied lib/oled.py"
+
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/as7341.py" :lib/as7341.py
 echo "  copied lib/as7341.py"
 

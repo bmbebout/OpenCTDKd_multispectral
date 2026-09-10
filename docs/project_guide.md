@@ -17,7 +17,9 @@ Combines the sensor suite of two prior instruments:
 | Multispectral light | Adafruit AS7341 10-channel | I2C, addr 0x39 |
 | Pressure / depth | Blue Robotics Bar30 (MS5837-30BA) | I2C, addr 0x76, 30 bar / ~300m |
 | Temperature | Blue Robotics Celsius Fast-Response (TSYS01) | I2C, addr 0x77, ±0.1°C |
-| Conductivity | Atlas Scientific EZO-EC | UART 9600 baud |
+| Conductivity | Atlas Scientific EZO-EC | I2C, address 0x64 |
+| GPS | GY-GPS6MU2 / NEO-6M-compatible | UART1, 9600 baud |
+| Display | 128x32 SSD1306 OLED | I2C, address 0x3C |
 | Real-time clock | DS3231 (Adafruit #3013 recommended) | I2C, addr 0x68, ±2 ppm TCXO, CR2032 onboard |
 | Storage | MicroSD card module | SPI |
 | Status indicator | RGB LED (external) | 3 GPIO pins, common cathode |
@@ -30,12 +32,12 @@ Combines the sensor suite of two prior instruments:
 
 | Bus | Devices |
 |---|---|
-| I2C | AS7341 (0x39), Bar30 MS5837-30BA (0x76), Celsius TSYS01 (0x77), DS3231 RTC (0x68) |
-| UART | Atlas EZO-EC |
+| I2C | AS7341 (0x39), Bar30 MS5837-30BA (0x76), Celsius TSYS01 (0x77), DS3231 RTC (0x68), SSD1306 OLED (0x3C) |
+| UART1 | GY-GPS6MU2 GPS |
 | SPI | SD card |
 | WiFi | NTP time sync only (when USB-connected) |
 
-All four I2C devices have distinct addresses and share one I2C bus.
+All five I2C devices have distinct addresses and share one I2C bus.
 
 ---
 
@@ -43,10 +45,11 @@ All four I2C devices have distinct addresses and share one I2C bus.
 
 | Function | GPIO | Physical Pin | Notes |
 |---|---|---|---|
-| UART0 TX → EZO-EC RX | GPIO0 | 1 | Atlas EZO-EC |
-| UART0 RX ← EZO-EC TX | GPIO1 | 2 | Atlas EZO-EC |
-| I2C0 SDA | GPIO4 | 6 | AS7341, Bar30, Celsius, DS3231 |
-| I2C0 SCL | GPIO5 | 7 | AS7341, Bar30, Celsius, DS3231 |
+| UART1 TX → GPS RX | GPIO8 | 11 | GY-GPS6MU2 |
+| UART1 RX ← GPS TX | GPIO9 | 12 | GY-GPS6MU2 |
+| I2C0 SDA | GPIO4 | 6 | AS7341, Bar30, Celsius, DS3231, OLED |
+| I2C0 SCL | GPIO5 | 7 | AS7341, Bar30, Celsius, DS3231, OLED |
+| OLED I2C address | 0x3C | — | SSD1306 on I2C0 |
 | RGB LED — Red | GPIO10 | 14 | Active high |
 | RGB LED — Green | GPIO11 | 15 | Active high |
 | RGB LED — Blue | GPIO12 | 16 | Active high |
@@ -113,6 +116,17 @@ All four I2C devices have distinct addresses and share one I2C bus.
   or adapted from the OpenCTD `RTClib` Arduino driver logic
 - **Role**: authoritative time source during recording mode (no WiFi/NTP); set from NTP
   on USB connect, then Pico internal RTC is synced from DS3231 at each boot
+
+### GY-GPS6MU2 / NEO-6M — GPS
+- **Interface**: UART1, 9600 baud; TX to GPIO9 and RX to GPIO8
+- **Role**: startup UTC source, position metadata, and GPS quality status
+- **Quality gate**: valid RMC and GGA data, at least 4 satellites, HDOP ≤ 5.0
+- **Recording behavior**: GPS polling stops after recording starts; the last good state is retained
+
+### SSD1306 — Status Display
+- **Interface**: I2C0, address 0x3C, 128x32 pixels
+- **Screens**: readiness/line count and AS7341 Clear/temperature values
+- **Refresh**: rotates every 2 seconds; live numeric values are right-aligned
 
 ### MicroSD Card
 - **Interface**: SPI (SPI0)
@@ -223,7 +237,7 @@ All third-party drivers will live in `lib/` on the Pico filesystem and in
 | OpenCTD m0 firmware | `OpenCTD/Software/Firmware/OpenCTD_m0/` |
 | OpenCTD Bar30 firmware | `OpenCTD/Software/Firmware/OpenCTD_m0_30Bar/` |
 | kdupro metadata notes | `kdupro/firmware/notes/` |
-| Integration dev notes | `OpenCTDKd_multispectral/human-notes/` |
+| Integration dev notes | `OpenCTDKd_multispectral/dev-notes/` |
 | MicroPython for Pico 2W | https://micropython.org/download/RPI_PICO2_W/ |
 | Bar30 product page | https://bluerobotics.com/store/sensors-sonars-cameras/sensors/bar30-sensor-r1/ |
 | Celsius sensor product page | https://bluerobotics.com/store/sensors-sonars-cameras/sensors/celsius-sensor-r1/ |
