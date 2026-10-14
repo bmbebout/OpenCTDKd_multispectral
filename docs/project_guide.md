@@ -17,6 +17,7 @@ Combines the sensor suite of two prior instruments:
 | Multispectral light | Adafruit AS7341 10-channel | I2C, addr 0x39 |
 | Pressure / depth | Blue Robotics Bar30 (MS5837-30BA) | I2C, addr 0x76, 30 bar / ~300m |
 | Temperature | Blue Robotics Celsius Fast-Response (TSYS01) | I2C, addr 0x77, ±0.1°C |
+| Temperature (RTD) | Atlas Scientific EZO-RTD | I2C, addr 0x66; feeds EZO-EC temperature compensation |
 | Conductivity | Atlas Scientific EZO-EC | I2C, address 0x64 |
 | GPS | GY-GPS6MU2 / NEO-6M-compatible | UART1, 9600 baud |
 | Display | 128x32 SSD1306 OLED | I2C, address 0x3C |
@@ -32,7 +33,7 @@ Combines the sensor suite of two prior instruments:
 
 | Bus | Devices |
 |---|---|
-| I2C | AS7341 (0x39), Bar30 MS5837-30BA (0x76), Celsius TSYS01 (0x77), DS3231 RTC (0x68), SSD1306 OLED (0x3C) |
+| I2C | AS7341 (0x39), Bar30 MS5837-30BA (0x76), Celsius TSYS01 (0x77), EZO-RTD (0x66), EZO-EC (0x64), DS3231 RTC (0x68), SSD1306 OLED (0x3C) |
 | UART1 | GY-GPS6MU2 GPS |
 | SPI | SD card |
 | WiFi | NTP time sync only (when USB-connected) |
@@ -94,6 +95,15 @@ All five I2C devices have distinct addresses and share one I2C bus.
 - **MicroPython library**: community ports available; relatively simple protocol
   (reset, read calibration coefficients, trigger conversion, read result)
 - **Wiring**: JST GH connector (same Blue Robotics cable convention)
+
+### Atlas Scientific EZO-RTD — Temperature (compensation source)
+- **Interface**: I2C, address 0x66 (factory switch from UART: `I2C,102` at 9600 baud, then power-cycle; LED turns blue)
+- **Wiring**: carrier `TX` terminal = SDA, `RX` terminal = SCL once in I2C mode
+- **Role**: runs in parallel with the TSYS01. Both temperatures are recorded (`Temp_TSYS01`, `Temp_RTD`),
+  and the RTD temperature is sent to the EZO-EC (`T,<temp>`) before each conductivity reading.
+  There is no fallback: if the RTD read fails, the RTD value and the compensated EC values are recorded as `ERR`.
+- **Timing**: a reading takes 600 ms. `lib/sensors.py` starts the conversion first so it overlaps the
+  spectral, pressure and TSYS01 reads; one full sample takes about 1.5 s.
 
 ### Atlas Scientific EZO-EC — Conductivity
 - **Interface**: UART at 9600 baud (default); can also do I2C if address jumper set
@@ -187,7 +197,12 @@ timestamp,pressure_mbar,depth_m,temperature_c,conductivity_uScm,f1_415nm,f2_445n
 ```
 
 **Timestamp**: ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`)  
-**Depth**: derived from pressure using freshwater/seawater density constant (configurable)
+**Depth**: derived from pressure using freshwater/seawater density constant (configurable)  
+**Temperature**: two columns, `Temp_TSYS01` (Celsius TSYS01) and `Temp_RTD` (EZO-RTD)  
+**Sensor errors**: a value whose sensor failed to read is recorded as `ERR` (never `0` or a substitute
+from another sensor). If the RTD fails, `Temp_RTD` and the EC-derived columns (Conductivity, TDS,
+Salinity, Specific Gravity) are all `ERR`, since EC cannot be temperature-compensated. The dashboard
+and OLED show `ERR` the same way.
 
 ### Deployment Metadata
 A `META.TXT` file on the SD card persists deployment-level settings between

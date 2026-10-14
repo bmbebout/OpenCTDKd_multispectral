@@ -16,10 +16,7 @@ import time
 import json
 
 import lib.rtc          as _rtc
-import lib.spectral     as _spectral
-import lib.pressure     as _pressure
-import lib.temperature  as _temp
-import lib.conductivity as _cond
+import lib.sensors      as _sensors
 import lib.gps          as _gps
 import lib.oled         as _oled
 import lib.recording as _recording
@@ -88,8 +85,12 @@ button:active{background:#2ea043}
 
 <h2>Sensors</h2>
 <div class="row">
-  <span class="lbl">Temperature</span>
+  <span class="lbl">Temperature (TSYS01)</span>
   <span><span class="v" id="tc">&#8212;</span><span class="u">&deg;C</span></span>
+</div>
+<div class="row">
+  <span class="lbl">Temperature (RTD)</span>
+  <span><span class="v" id="rtd">&#8212;</span><span class="u">&deg;C</span></span>
 </div>
 <div class="row">
   <span class="lbl">Pressure</span>
@@ -151,6 +152,7 @@ function poll(){
             document.getElementById('position').textContent = gps.fix ?
                 numberText(gps.latitude, 6) + ', ' + numberText(gps.longitude, 6) : '--';
             document.getElementById('tc').textContent  = numberText(d.temperature_c, 2);
+            document.getElementById('rtd').textContent = numberText(d.rtd_c, 3);
             document.getElementById('p').textContent   = numberText(d.pressure_mbar, 1);
             document.getElementById('dp').textContent  = numberText(d.depth_m, 3);
             document.getElementById('ec').textContent  = numberText(d.ec_us_cm, 1);
@@ -174,6 +176,7 @@ function poll(){
     });
 }
 function numberText(value, digits){
+    if(value === 'ERR') return 'ERR';
     var number = Number(value);
     return isFinite(number) ? number.toFixed(digits) : '--';
 }
@@ -237,9 +240,9 @@ def _start_ap():
     return ap
 
 
-def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
+def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev):
     """Read all sensors and return a JSON-serialisable dict.
-    Individual sensor failures return 0.0 so the page always renders."""
+    A failed sensor value is "ERR" so the page always renders and shows the fault."""
     data = {}
 
     try:
@@ -249,43 +252,9 @@ def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_d
         print("webserver: RTC error:", e)
         data["time"] = "unavailable"
 
-    temp_c = 0.0
-    try:
-        temp_c = _temp.read(temp_dev)
-        data["temperature_c"] = temp_c
-    except Exception as e:
-        print("webserver: temp error:", e)
-        data["temperature_c"] = 0.0
+    data.update(_sensors.read_all(spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev))
 
-    try:
-        p, _, depth = _pressure.read(pressure_dev)
-        data["pressure_mbar"] = p
-        data["depth_m"]       = depth
-    except Exception as e:
-        print("webserver: pressure error:", e)
-        data["pressure_mbar"] = 0.0
-        data["depth_m"]       = 0.0
-
-    try:
-        ec, tds, sal, sg = _cond.read(cond_dev, temp_c)
-        data["ec_us_cm"]        = ec
-        data["tds_ppm"]         = tds
-        data["salinity_psu"]    = sal
-        data["specific_gravity"] = sg
-    except Exception as e:
-        print("webserver: conductivity error:", e)
-        data["ec_us_cm"]        = 0.0
-        data["tds_ppm"]         = 0.0
-        data["salinity_psu"]    = 0.0
-        data["specific_gravity"] = 0.0
-
-    try:
-        data["spectral"] = _spectral.read_channels(spectral_dev)
-    except Exception as e:
-        print("webserver: spectral error:", e)
-        data["spectral"] = {}
-
-    _recording.set_display_values(data["spectral"].get("clear"), temp_c)
+    _recording.set_display_values(data["spectral"].get("clear"), data["temperature_c"])
 
     if not _recording.active():
         try:
@@ -306,7 +275,7 @@ def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_d
     data["recording"] = _recording.active()
     data["recording_file"] = _recording.path() or ""
     _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
-                 _recording.line_count(), data["spectral"].get("clear"), temp_c)
+                 _recording.line_count(), data["spectral"].get("clear"), data["temperature_c"])
 
     return data
 
@@ -325,7 +294,7 @@ def _send(conn, status, content_type, body, download_name=None):
     conn.sendall(header.encode("utf-8") + body)
 
 
-def _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
+def _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev):
     """Dispatch one HTTP request. Returns True if the server should stop."""
     try:
         if path.startswith("/api/start"):
@@ -348,7 +317,7 @@ def _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev
             _recording.delete_file(name)
             _send(conn, "200 OK", "application/json", '{"status":"deleted"}')
         elif path.startswith("/api/status"):
-            data = _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
+            data = _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev)
             _send(conn, "200 OK", "application/json", json.dumps(data))
         else:
             _send(conn, "200 OK", "text/html; charset=utf-8", _HTML)
@@ -380,7 +349,7 @@ def _query(path, key):
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
+def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev):
     """Start AP and serve until the user requests /api/shutdown.
 
     Returns False so the caller can transition to data-recording mode.
@@ -405,7 +374,7 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond
             except OSError:
                 try:
                     _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev,
-                                             cond_dev, time.ticks_ms())
+                                             rtd_dev, cond_dev, time.ticks_ms())
                 except OSError as e:
                     print("webserver: recording error:", e)
                 _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
@@ -419,7 +388,7 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond
                 req = raw.decode("utf-8")
                 parts = req.split(" ")
                 path = parts[1] if len(parts) >= 2 else "/"
-                stop = _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
+                stop = _handle(conn, path, rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev)
             except Exception as e:
                 print("webserver: request error:", e)
             finally:
@@ -430,7 +399,7 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond
 
             try:
                 _recording.sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev,
-                                         cond_dev, time.ticks_ms())
+                                         rtd_dev, cond_dev, time.ticks_ms())
             except OSError as e:
                 print("webserver: recording error:", e)
             _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),

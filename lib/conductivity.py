@@ -29,6 +29,6 @@ def setup():
 
 def read(sensor, temperature_c=None):
     """Trigger a reading; return (ec_us_cm, tds_ppm, salinity_psu, specific_gravity).
-    temperature_c: pass TSYS01 reading for temperature-compensated EC."""
+    temperature_c: EZO-RTD reading for temperature-compensated EC."""
     sensor.read(temperature_c)
     return sensor.ec, sensor.tds, sensor.salinity, sensor.specific_gravity

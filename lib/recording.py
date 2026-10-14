@@ -8,12 +8,10 @@ import lib.storage as _storage
 import lib.rtc as _rtc
 import lib.gps as _gps
 import lib.spectral as _spectral
-import lib.pressure as _pressure
-import lib.temperature as _temp
-import lib.conductivity as _cond
+import lib.sensors as _sensors
 
 _HEADER = [
-    "Date", "Time", "Pressure", "Depth", "Temp", "Conductivity",
+    "Date", "Time", "Pressure", "Depth", "Temp_TSYS01", "Temp_RTD", "Conductivity",
     "TDS", "Salinity", "Specific Gravity", "F1_415nm", "F2_445nm",
     "F3_480nm", "F4_515nm", "F5_555nm", "F6_590nm", "F7_630nm",
     "F8_680nm", "Clear", "NIR",
@@ -133,27 +131,26 @@ def _timestamp(rtc_dev, now_ms):
             "%02d:%02d:%02d.%03d" % (h, mi, s, millis))
 
 
-def sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev, cond_dev, now_ms):
-    """Take one row at the configured interval."""
+def sample_if_due(rtc_dev, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, now_ms):
+    """Take one row at the configured interval. A failed sensor is recorded as ERR."""
     global _last_sample, _line_count, _clear_value, _temperature_value
     if not _active or (now_ms - _last_sample) < _interval_ms:
         return
     _last_sample = now_ms
     date_text, time_text = _timestamp(rtc_dev, now_ms)
-    temp_c = _temp.read(temp_dev)
-    pressure_mbar, _, depth_m = _pressure.read(pressure_dev)
-    ec, tds, salinity, gravity = _cond.read(cond_dev, temp_c)
-    channels = _spectral.read_channels(spectral_dev)
+    data = _sensors.read_all(spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev)
+    channels = data["spectral"]
     values = [
         date_text, time_text,
-        pressure_mbar, depth_m, temp_c, ec, tds, salinity, gravity,
+        data["pressure_mbar"], data["depth_m"], data["temperature_c"], data["rtd_c"],
+        data["ec_us_cm"], data["tds_ppm"], data["salinity_psu"], data["specific_gravity"],
     ]
-    values.extend(channels.get(name, "") for name in _spectral.CHANNEL_NAMES)
+    values.extend(channels[name] for name in _spectral.CHANNEL_NAMES)
     try:
         _storage.append_csv(_path, values)
         _line_count += 1
         _clear_value = channels.get("clear")
-        _temperature_value = temp_c
+        _temperature_value = data["temperature_c"]
     except OSError as e:
         print("Recording stopped; SD write error:", e)
         stop()

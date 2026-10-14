@@ -11,6 +11,9 @@ Deployed modules (lib/):
     pressure.py — Pressure module (setup / read)
     tsys01.py  — TSYS01 low-level I2C driver
     temperature.py — Temperature module (setup / read)
+    ezo_rtd.py  — Atlas Scientific EZO-RTD low-level I2C driver
+    temperature_rtd.py — RTD temperature module (setup / read / start)
+    sensors.py  — Shared sensor sampling (read_all; failed values are ERR)
     ezo_ec.py  — Atlas Scientific EZO-EC low-level I2C driver
     conductivity.py — Conductivity module (setup / read)
     neo6m.py    — NEO-6M-compatible NMEA GPS driver
@@ -30,6 +33,7 @@ import lib.storage      as storage
 import lib.spectral     as spectral
 import lib.pressure     as pressure
 import lib.temperature  as temperature
+import lib.temperature_rtd as temperature_rtd
 import lib.conductivity as conductivity
 import lib.gps          as gps
 import lib.oled         as oled
@@ -38,6 +42,16 @@ import lib.webserver    as webserver
 
 def _fmt_time(t):
     return "%04d-%02d-%02d  %02d:%02d:%02d" % t
+
+
+def _setup_sensor(label, module):
+    """Initialise a sensor module. On failure report it and return None so the
+    system keeps running and that sensor's readings are recorded as ERR."""
+    try:
+        return module.setup()
+    except OSError as e:
+        print("%s error:" % label, e, "- readings will record ERR")
+        return None
 
 
 def boot():
@@ -81,33 +95,12 @@ def boot():
         print("GPS error:", e)
         _gps = None
 
-    # --- Spectral sensor ---
-    try:
-        _spectral = spectral.setup()
-    except OSError as e:
-        print("Spectral error:", e)
-        sys.exit(1)
-
-    # --- Pressure sensor ---
-    try:
-        _pressure = pressure.setup()
-    except OSError as e:
-        print("Pressure error:", e)
-        sys.exit(1)
-
-    # --- Temperature sensor ---
-    try:
-        _temperature = temperature.setup()
-    except OSError as e:
-        print("Temperature error:", e)
-        sys.exit(1)
-
-    # --- Conductivity sensor ---
-    try:
-        _conductivity = conductivity.setup()
-    except OSError as e:
-        print("Conductivity error:", e)
-        sys.exit(1)
+    # --- Sensors: a failed setup is non-fatal; its readings record as ERR ---
+    _spectral     = _setup_sensor("Spectral", spectral)
+    _pressure     = _setup_sensor("Pressure", pressure)
+    _temperature  = _setup_sensor("Temperature", temperature)
+    _rtd          = _setup_sensor("EZO-RTD", temperature_rtd)
+    _conductivity = _setup_sensor("Conductivity", conductivity)
 
     try:
         _oled = oled.setup()
@@ -115,14 +108,14 @@ def boot():
         print("OLED error:", e)
         _oled = None
 
-    return _rtc, _gps, rtc_source, _spectral, _pressure, _temperature, _conductivity, _oled
+    return _rtc, _gps, rtc_source, _spectral, _pressure, _temperature, _rtd, _conductivity, _oled
 
 
-def idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev):
+def idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev):
     """Run the dashboard and recording loop."""
-    webserver.run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
+    webserver.run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev)
 
 
 # --- Entry point ---
-rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev = boot()
-idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, cond_dev, oled_dev)
+rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev = boot()
+idle(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev)

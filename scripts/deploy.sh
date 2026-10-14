@@ -60,11 +60,20 @@ echo "  copied lib/tsys01.py"
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/temperature.py" :lib/temperature.py
 echo "  copied lib/temperature.py"
 
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/ezo_rtd.py" :lib/ezo_rtd.py
+echo "  copied lib/ezo_rtd.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/temperature_rtd.py" :lib/temperature_rtd.py
+echo "  copied lib/temperature_rtd.py"
+
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/ezo_ec.py" :lib/ezo_ec.py
 echo "  copied lib/ezo_ec.py"
 
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/conductivity.py" :lib/conductivity.py
 echo "  copied lib/conductivity.py"
+
+mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/sensors.py" :lib/sensors.py
+echo "  copied lib/sensors.py"
 
 mpremote connect "$PORT" fs cp "$PROJECT_DIR/lib/recording.py" :lib/recording.py
 echo "  copied lib/recording.py"

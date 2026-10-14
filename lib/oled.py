@@ -102,6 +102,15 @@ _last_switch_ms = 0
 _last_render_key = None
 
 
+def _value_text(value, fmt):
+    """Format a reading; "--" before the first reading, strings (e.g. "ERR") pass through."""
+    if value is None:
+        return "--"
+    if isinstance(value, str):
+        return value
+    return fmt % value
+
+
 def update(display, ready, line_count, clear_value=None, temperature_c=None):
     """Rotate between readiness/lines and Clear/temperature screens."""
     global _screen, _last_switch_ms, _last_render_key
@@ -121,11 +130,9 @@ def update(display, ready, line_count, clear_value=None, temperature_c=None):
             display.text("LINES:%d" % line_count, 0, 16, 1, 2)
         else:
             display.text("CLEAR:", 0, 0, 1, 2)
-            clear_text = "--" if clear_value is None else str(int(clear_value))
-            display.text_right(clear_text, 0, 1, 2)
+            display.text_right(_value_text(clear_value, "%d"), 0, 1, 2)
             display.text("T:", 0, 16, 1, 2)
-            temperature_text = "--C" if temperature_c is None else "%.1fC" % temperature_c
-            display.text_right(temperature_text, 16, 1, 2)
+            display.text_right(_value_text(temperature_c, "%.1fC"), 16, 1, 2)
         display.show()
         _last_render_key = render_key
     except OSError as e:
