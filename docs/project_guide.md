@@ -202,7 +202,14 @@ timestamp,pressure_mbar,depth_m,temperature_c,conductivity_uScm,f1_415nm,f2_445n
 **Sensor errors**: a value whose sensor failed to read is recorded as `ERR` (never `0` or a substitute
 from another sensor). If the RTD fails, `Temp_RTD` and the EC-derived columns (Conductivity, TDS,
 Salinity, Specific Gravity) are all `ERR`, since EC cannot be temperature-compensated. The dashboard
-and OLED show `ERR` the same way.
+and OLED show `ERR` the same way.  
+**Sensor lifecycle**: each I2C sensor is wrapped in `lib/sensors.py` `Sensor`, which sets itself up lazily.
+A sensor that is missing at boot does not stop the firmware; it is retried every 5 s (by the idle loop
+before recording, by the sampling reads during recording) and records `ERR` until it works. Any failed
+read marks the sensor not ready so it is fully re-initialised on the next attempt, and idle-time bus
+checks catch a sensor that disappears. Ready/lost transitions are written to `log.txt`
+(`sensor_ready`, `sensor_lost`, `sensor_unavailable`). The dashboard shows a per-sensor health row
+and the OLED rotates a `SENSORS PASS/FAIL` screen. The RTC remains required at boot.
 
 ### Deployment Metadata
 A `META.TXT` file on the SD card persists deployment-level settings between

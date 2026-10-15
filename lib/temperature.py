@@ -14,13 +14,14 @@ from lib.tsys01 import TSYS01
 _SDA  = 4
 _SCL  = 5
 _FREQ = 100_000
+ADDR  = 0x77
 
 
 def setup():
     """Initialise I2C0, verify sensor presence, load PROM calibration.
     Raises OSError if sensor not found at 0x77."""
     i2c = I2C(0, sda=Pin(_SDA), scl=Pin(_SCL), freq=_FREQ)
-    if 0x77 not in i2c.scan():
+    if ADDR not in i2c.scan():
         raise OSError("TSYS01 not found on I2C0 (0x77) — check wiring")
     sensor = TSYS01(i2c)
     print("Temperature: TSYS01 ready")

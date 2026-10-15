@@ -27,7 +27,7 @@ def main():
         return
 
     print("\nReading all 10 channels (two SMUX passes)...")
-    ch = spectral.read_channels(sensor)
+    ch = spectral.read(sensor)
 
     print("\n  Channel      Counts")
     print("  -----------  ------")

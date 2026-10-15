@@ -6,14 +6,14 @@ Deployed modules (lib/):
     sdcard.py  — SPI SD card block device driver
     storage.py — Storage module (setup / append_csv / read_file / exists)
     as7341.py  — AS7341 low-level I2C driver
-    spectral.py — Spectral module (setup / read_channels)
+    spectral.py — Spectral module (setup / read)
     ms5837.py  — MS5837-30BA low-level I2C driver
     pressure.py — Pressure module (setup / read)
     tsys01.py  — TSYS01 low-level I2C driver
     temperature.py — Temperature module (setup / read)
     ezo_rtd.py  — Atlas Scientific EZO-RTD low-level I2C driver
     temperature_rtd.py — RTD temperature module (setup / read / start)
-    sensors.py  — Shared sensor sampling (read_all; failed values are ERR)
+    sensors.py  — Sensor lifecycle (lazy setup, retry, health) and shared sampling (read_all; failed values are ERR)
     ezo_ec.py  — Atlas Scientific EZO-EC low-level I2C driver
     conductivity.py — Conductivity module (setup / read)
     neo6m.py    — NEO-6M-compatible NMEA GPS driver
@@ -37,21 +37,13 @@ import lib.temperature_rtd as temperature_rtd
 import lib.conductivity as conductivity
 import lib.gps          as gps
 import lib.oled         as oled
+import lib.recording    as recording
+import lib.sensors      as sensors
 import lib.webserver    as webserver
 
 
 def _fmt_time(t):
     return "%04d-%02d-%02d  %02d:%02d:%02d" % t
-
-
-def _setup_sensor(label, module):
-    """Initialise a sensor module. On failure report it and return None so the
-    system keeps running and that sensor's readings are recorded as ERR."""
-    try:
-        return module.setup()
-    except OSError as e:
-        print("%s error:" % label, e, "- readings will record ERR")
-        return None
 
 
 def boot():
@@ -95,12 +87,15 @@ def boot():
         print("GPS error:", e)
         _gps = None
 
-    # --- Sensors: a failed setup is non-fatal; its readings record as ERR ---
-    _spectral     = _setup_sensor("Spectral", spectral)
-    _pressure     = _setup_sensor("Pressure", pressure)
-    _temperature  = _setup_sensor("Temperature", temperature)
-    _rtd          = _setup_sensor("EZO-RTD", temperature_rtd)
-    _conductivity = _setup_sensor("Conductivity", conductivity)
+    # --- Sensors: set up lazily; a sensor that fails is retried later and records ERR meanwhile ---
+    sensors.set_event_logger(lambda message: recording.log_event(message, _rtc))
+    _spectral     = sensors.Sensor("AS7341", spectral, spectral.ADDR)
+    _pressure     = sensors.Sensor("MS5837", pressure, pressure.ADDR)
+    _temperature  = sensors.Sensor("TSYS01", temperature, temperature.ADDR)
+    _rtd          = sensors.Sensor("EZO-RTD", temperature_rtd, temperature_rtd.ADDR)
+    _conductivity = sensors.Sensor("EZO-EC", conductivity, conductivity.ADDR)
+    for sensor in (_spectral, _pressure, _temperature, _rtd, _conductivity):
+        sensor.attempt(force=True)
 
     try:
         _oled = oled.setup()

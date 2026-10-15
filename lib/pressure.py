@@ -14,6 +14,7 @@ from lib.ms5837 import MS5837, DENSITY_FRESHWATER, DENSITY_SALTWATER  # noqa: F4
 _SDA  = 4
 _SCL  = 5
 _FREQ = 100_000
+ADDR  = 0x76
 
 # Re-export density constants for callers that set fluid type
 FRESHWATER = DENSITY_FRESHWATER
@@ -24,7 +25,7 @@ def setup():
     """Initialise I2C0, verify sensor presence, read PROM calibration.
     Raises OSError if sensor not found or CRC check fails."""
     i2c = I2C(0, sda=Pin(_SDA), scl=Pin(_SCL), freq=_FREQ)
-    if 0x76 not in i2c.scan():
+    if ADDR not in i2c.scan():
         raise OSError("MS5837 not found on I2C0 (0x76) — check wiring")
     sensor = MS5837(i2c)
     print("Pressure: MS5837-30BA ready")

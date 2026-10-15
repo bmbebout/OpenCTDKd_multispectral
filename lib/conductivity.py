@@ -14,13 +14,14 @@ from lib.ezo_ec import EZO_EC
 _SDA  = 4
 _SCL  = 5
 _FREQ = 100_000
+ADDR  = 0x64
 
 
 def setup():
     """Initialise I2C0 and verify EZO-EC presence.
     Raises OSError if sensor not found or not in I2C mode (LED must be solid blue)."""
     i2c = I2C(0, sda=Pin(_SDA), scl=Pin(_SCL), freq=_FREQ)
-    if 0x64 not in i2c.scan():
+    if ADDR not in i2c.scan():
         raise OSError("EZO-EC not found on I2C0 (0x64) — check wiring; if LED is green, switch to I2C mode first")
     sensor = EZO_EC(i2c)
     print("Conductivity: EZO-EC ready")

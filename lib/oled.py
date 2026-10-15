@@ -19,7 +19,7 @@ _FONT = {
     "8": (54, 73, 73, 73, 54), "9": (6, 73, 73, 41, 30),
     "A": (126, 17, 17, 17, 126), "C": (62, 65, 65, 65, 34),
     "D": (127, 65, 65, 34, 28),
-    "E": (127, 73, 73, 73, 65), "L": (127, 64, 64, 64, 64),
+    "E": (127, 73, 73, 73, 65), "F": (127, 9, 9, 9, 1), "L": (127, 64, 64, 64, 64),
     "N": (127, 2, 12, 16, 127), "O": (62, 65, 65, 65, 62),
     "R": (127, 9, 25, 41, 70), "S": (38, 73, 73, 73, 50),
     "T": (1, 1, 127, 1, 1),
@@ -111,28 +111,34 @@ def _value_text(value, fmt):
     return fmt % value
 
 
-def update(display, ready, line_count, clear_value=None, temperature_c=None):
-    """Rotate between readiness/lines and Clear/temperature screens."""
+_SCREENS = 3
+
+
+def update(display, ready, line_count, clear_value=None, temperature_c=None, sensors_ok=False):
+    """Rotate between readiness/lines, Clear/temperature and sensor pass/fail screens."""
     global _screen, _last_switch_ms, _last_render_key
     if display is None:
         return
     try:
         now_ms = time.ticks_ms()
         if time.ticks_diff(now_ms, _last_switch_ms) >= 2000:
-            _screen = (_screen + 1) % 2
+            _screen = (_screen + 1) % _SCREENS
             _last_switch_ms = now_ms
-        render_key = (_screen, ready, line_count, clear_value, temperature_c)
+        render_key = (_screen, ready, line_count, clear_value, temperature_c, sensors_ok)
         if render_key == _last_render_key:
             return
         display.clear()
         if _screen == 0:
             display.text("READY" if ready else "NOT RDY", 0, 0, 1, 2)
             display.text("LINES:%d" % line_count, 0, 16, 1, 2)
-        else:
+        elif _screen == 1:
             display.text("CLEAR:", 0, 0, 1, 2)
             display.text_right(_value_text(clear_value, "%d"), 0, 1, 2)
             display.text("T:", 0, 16, 1, 2)
             display.text_right(_value_text(temperature_c, "%.1fC"), 16, 1, 2)
+        else:
+            display.text("SENSORS:", 0, 0, 1, 2)
+            display.text("PASS" if sensors_ok else "FAIL", 0, 16, 1, 2)
         display.show()
         _last_render_key = render_key
     except OSError as e:

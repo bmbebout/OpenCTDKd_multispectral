@@ -16,13 +16,14 @@ from lib.ezo_rtd import EZO_RTD
 _SDA  = 4
 _SCL  = 5
 _FREQ = 100_000
+ADDR  = 0x66
 
 
 def setup():
     """Initialise I2C0 and verify EZO-RTD presence.
     Raises OSError if sensor not found or not in I2C mode (LED must be blue)."""
     i2c = I2C(0, sda=Pin(_SDA), scl=Pin(_SCL), freq=_FREQ)
-    if 0x66 not in i2c.scan():
+    if ADDR not in i2c.scan():
         raise OSError("EZO-RTD not found on I2C0 (0x66) - check wiring; if LED is green, switch to I2C mode first")
     sensor = EZO_RTD(i2c)
     print("Temperature: EZO-RTD ready")
@@ -36,11 +37,5 @@ def read(sensor):
 
 
 def start(sensor):
-    """Begin a conversion so it runs while other sensors are read.
-    No-op when the RTD is absent; a failed start surfaces in read()."""
-    if sensor is None:
-        return
-    try:
-        sensor.start()
-    except OSError:
-        pass
+    """Begin a conversion so it runs while other sensors are read."""
+    sensor.start()

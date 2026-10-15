@@ -64,8 +64,8 @@ def start(rtc_dev, gps_dev, rtc_source):
     _storage.append_csv(_path, _HEADER)
     _active = True
     _last_sample = 0
-    _log_event("record_start file=%s gps_status=%s gps_quality=%s" %
-               (_path, metadata["gps_status"], metadata["gps_quality"]), rtc_dev)
+    log_event("record_start file=%s gps_status=%s gps_quality=%s" %
+              (_path, metadata["gps_status"], metadata["gps_quality"]), rtc_dev)
     print("Recording started:", _path)
     return _path
 
@@ -78,7 +78,7 @@ def stop():
         _sqw.irq(handler=None)
         _sqw = None
     if _path is not None:
-        _log_event("record_stop file=%s" % _path, _rtc_dev)
+        log_event("record_stop file=%s" % _path, _rtc_dev)
     print("Recording stopped:", _path)
 
 
@@ -178,8 +178,8 @@ def _validate_name(name):
         raise ValueError("invalid file name")
 
 
-def _log_event(message, rtc_dev):
-    """Write a non-critical UTC event without interrupting recording control."""
+def log_event(message, rtc_dev):
+    """Write a non-critical UTC event to log.txt without interrupting the caller."""
     try:
         if rtc_dev is None:
             return
@@ -187,4 +187,4 @@ def _log_event(message, rtc_dev):
         timestamp = "%04d-%02d-%02dT%02d:%02d:%02d" % (y, mo, d, h, mi, s)
         _storage.append_log(message, timestamp)
     except OSError as e:
-        print("Recording log error:", e)
+        print("Event log error:", e)

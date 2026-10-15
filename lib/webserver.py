@@ -47,6 +47,10 @@ h2{color:#8b949e;font-size:.75em;text-transform:uppercase;letter-spacing:.08em;m
 .v{font-weight:600;color:#e6edf3}
 .u{color:#8b949e;font-size:.8em;margin-left:2px}
 .sp{display:flex;flex-wrap:wrap;gap:5px}
+.dot{display:inline-block;width:.7em;height:.7em;border-radius:50%;margin-right:.5em;background:#8b949e}
+.dot.ok{background:#2ea043}
+.dot.bad{background:#f85149}
+.why{color:#ff7b72;font-size:.72em;margin-left:.6em}
 .ch{background:#161b22;border:1px solid #30363d;border-radius:4px;padding:6px 8px;
     text-align:center;flex:1 1 80px}
 .nm{color:#58a6ff;font-size:.7em;display:block;margin-bottom:2px}
@@ -113,6 +117,9 @@ button:active{background:#2ea043}
   <span class="v" id="sg">&#8212;</span>
 </div>
 
+<h2>Sensor Health</h2>
+<div id="health"></div>
+
 <h2>Spectral</h2>
 <div class="sp" id="sp"></div>
 
@@ -158,6 +165,7 @@ function poll(){
             document.getElementById('ec').textContent  = numberText(d.ec_us_cm, 1);
             document.getElementById('sal').textContent = numberText(d.salinity_psu, 3);
             document.getElementById('sg').textContent  = numberText(d.specific_gravity, 4);
+            renderHealth(d.sensor_health || {});
       var g = document.getElementById('sp');
       g.innerHTML = '';
             var s = d.spectral || {};
@@ -174,6 +182,25 @@ function poll(){
     .catch(function(e){
             reportError('status: ' + e.message);
     });
+}
+function renderHealth(health){
+    var el = document.getElementById('health');
+    el.innerHTML = '';
+    for(var name in health){
+        var h = health[name];
+        var row = document.createElement('div'); row.className = 'row';
+        var lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = name;
+        var state = document.createElement('span');
+        var dot = document.createElement('span'); dot.className = 'dot ' + (h.ready ? 'ok' : 'bad');
+        var txt = document.createElement('span'); txt.className = 'v'; txt.textContent = h.ready ? 'ready' : 'not ready';
+        state.appendChild(dot); state.appendChild(txt);
+        if(!h.ready && h.error){
+            var why = document.createElement('span'); why.className = 'why'; why.textContent = h.error;
+            state.appendChild(why);
+        }
+        row.appendChild(lbl); row.appendChild(state);
+        el.appendChild(row);
+    }
 }
 function numberText(value, digits){
     if(value === 'ERR') return 'ERR';
@@ -240,6 +267,13 @@ def _start_ap():
     return ap
 
 
+def _refresh_oled(oled_dev, gps_dev, clear_value, temperature_c, sensor_devs):
+    """Update the OLED with readiness, latest values and sensor pass/fail."""
+    _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
+                 _recording.line_count(), clear_value, temperature_c,
+                 _sensors.all_ready(*sensor_devs))
+
+
 def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev, oled_dev):
     """Read all sensors and return a JSON-serialisable dict.
     A failed sensor value is "ERR" so the page always renders and shows the fault."""
@@ -252,7 +286,9 @@ def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_d
         print("webserver: RTC error:", e)
         data["time"] = "unavailable"
 
+    sensor_devs = (spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev)
     data.update(_sensors.read_all(spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev))
+    data["sensor_health"] = _sensors.health(*sensor_devs)
 
     _recording.set_display_values(data["spectral"].get("clear"), data["temperature_c"])
 
@@ -274,8 +310,7 @@ def _get_status(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_d
     data["sd"] = "ready" if _storage.available() else "unavailable"
     data["recording"] = _recording.active()
     data["recording_file"] = _recording.path() or ""
-    _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
-                 _recording.line_count(), data["spectral"].get("clear"), data["temperature_c"])
+    _refresh_oled(oled_dev, gps_dev, data["spectral"].get("clear"), data["temperature_c"], sensor_devs)
 
     return data
 
@@ -367,6 +402,8 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_
 
     print("Web server listening - http://192.168.4.1")
 
+    sensor_devs = (spectral_dev, pressure_dev, temp_dev, rtd_dev, cond_dev)
+
     try:
         while True:
             try:
@@ -377,9 +414,12 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_
                                              rtd_dev, cond_dev, time.ticks_ms())
                 except OSError as e:
                     print("webserver: recording error:", e)
-                _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
-                             _recording.line_count(), _recording.clear_value(),
-                             _recording.temperature_value())
+                # Idle: keep retrying sensors that are not ready. While recording,
+                # the sampling reads drive recovery instead.
+                if not _recording.active():
+                    _sensors.maintain(sensor_devs)
+                _refresh_oled(oled_dev, gps_dev, _recording.clear_value(),
+                              _recording.temperature_value(), sensor_devs)
                 continue
 
             stop = False
@@ -402,9 +442,8 @@ def run(rtc_dev, gps_dev, rtc_source, spectral_dev, pressure_dev, temp_dev, rtd_
                                          rtd_dev, cond_dev, time.ticks_ms())
             except OSError as e:
                 print("webserver: recording error:", e)
-            _oled.update(oled_dev, _gps.ready(gps_dev) and _storage.available(),
-                         _recording.line_count(), _recording.clear_value(),
-                         _recording.temperature_value())
+            _refresh_oled(oled_dev, gps_dev, _recording.clear_value(),
+                          _recording.temperature_value(), sensor_devs)
 
     finally:
         srv.close()

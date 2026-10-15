@@ -36,26 +36,46 @@ Supersedes the open items in `261005_ezo_rtd_integration.md`.
 
 - Any failed sensor read is recorded as `ERR` in its columns, never 0 or a substitute.
   The dashboard and OLED show `ERR` the same way.
-- A sensor that fails setup at boot no longer stops the firmware; it stays `None`
-  and its columns record `ERR`. The RTC is still fatal (rows need a timestamp).
+- A sensor that fails setup at boot no longer stops the firmware. The RTC is still
+  fatal (rows need a timestamp).
 - CSV: `Temp` replaced by `Temp_TSYS01` and `Temp_RTD` (after Depth).
 - Sensors are recorded as observed; no lag correction. They are sampled in
   sequence over about 1.5 s per row, timestamp taken at the start of the row.
+
+## Lazy sensor loading and health
+
+- `lib/sensors.py` `Sensor` wraps each I2C sensor: set up on first use, retried every 5 s
+  while not ready, fully re-initialised after any failed read (a power-glitched sensor
+  can otherwise return plausible but wrong data). Readiness is per sensor; EC is `ERR`
+  while the RTD is not ready, but EC itself can be ready.
+- The idle loop calls `sensors.maintain()` (every 5 s): retries sensors that are not
+  ready and flags ready ones that vanish from an I2C scan. This runs with no dashboard
+  connected, so sensors that start slowly come up during the idle period before the
+  first reading. While recording, the sampling reads drive recovery instead.
+- Transitions are logged once to `log.txt`: `sensor_ready`, `sensor_lost`,
+  `sensor_unavailable`.
+- Dashboard: "Sensor Health" section, a green/red indicator and last error per sensor.
+  OLED: third rotating screen, `SENSORS` `PASS`/`FAIL` (added the missing `F` glyph).
+- `spectral.read_channels` renamed `spectral.read` to match the other managers; each
+  manager now exposes `ADDR`.
 
 ## Bugs found
 
 - Right after a reset, a conversion left unread made the first `i` return the stale
   reading, failing RTD setup. `setup()` now retries until the reply identifies an RTD.
 - `S,?` replies `?S,C`; the lowercase compare re-wrote the scale on every boot. Fixed.
-- One EZO-EC "not responding" on a first verify was not diagnosed or reproduced.
+- One EZO-EC "not responding" on a first verify was not diagnosed or reproduced; lazy
+  retry would now recover from it.
 
 ## Open items
 
-- Cold power-up is untested (all tests were soft resets, sensors stayed powered).
-  `setup()` scans once and gives up, so a slow-starting sensor would record `ERR` for
-  the whole session. Consider a startup retry window and test with a real power cycle.
+- Cold power-up is still untested on hardware (all tests were soft resets, sensors
+  stayed powered). Lazy loading should handle slow-starting sensors; verify with a real
+  power cycle.
+- A wedged shared I2C bus (brownout, water ingress) would fail every I2C sensor; retries
+  cannot clear it. Needs a bus-clear recovery (toggle SCL, re-create the I2C object).
 - RTD reads about 0.8 C warmer than the TSYS01; compare in the same water bath.
 - A row takes about 1.5 s (RTD read fresh each row), longer than the 1 s interval.
 - RTC read failure still skips the row.
 - Confirm the RTD green flash cadence (about 3 s observed) against our read schedule
-  (the dashboard polls every 5 s).
+  (the dashboard polls every 5 s; the idle bus scan every 5 s also touches the RTD address).
